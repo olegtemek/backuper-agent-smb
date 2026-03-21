@@ -1,0 +1,25 @@
+{
+  "smb": {
+    "host": "host",
+    "port": 445,
+    "share": "\\\\server\\sharefolder",
+    "username": "login",
+    "password": "password"
+  },
+  "hostname": "main-pc",
+  "max_versions": 3,
+  "debug": true,
+  "timeout_minutes": 120,
+  "telegram": {
+    "token": "bot123456:ABC-DEF...",
+    "chat_id": "789012345"
+  },
+  "jobs": [
+    {
+      "name": "test-backup",
+      "paths": [
+        "/Users/me/Documents/test-backup"
+      ]
+    }
+  ]
+}
