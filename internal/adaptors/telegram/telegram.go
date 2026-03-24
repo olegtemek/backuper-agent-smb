@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -34,9 +35,8 @@ func (t *Telegram) SendReport(ctx context.Context, report usecase.BackupReport) 
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.cfg.Telegram.Token)
 
 	reqBody := sendMessageRequest{
-		ChatID:    t.cfg.Telegram.ChatID,
-		Text:      text,
-		ParseMode: "Markdown",
+		ChatID: t.cfg.Telegram.ChatID,
+		Text:   text,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -59,7 +59,14 @@ func (t *Telegram) SendReport(ctx context.Context, report usecase.BackupReport) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		slog.Warn("telegram returned non-200 status", "status", resp.StatusCode)
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			slog.Error("failed to read response body", "error", err)
+			return err
+		}
+		bodyString := string(bodyBytes)
+
+		slog.Warn("telegram returned non-200 status", "status", resp.StatusCode, "bodyString", bodyString)
 	} else {
 		slog.Info("telegram report sent successfully")
 	}
