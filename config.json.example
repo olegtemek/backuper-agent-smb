@@ -21,5 +21,8 @@
         "/Users/me/Documents/test-backup"
       ]
     }
-  ]
+  ],
+  "app_scheduler": false,
+  "app_scheduler_plan": "24h",
+  "app_scheduler_last_time": "0001-01-01T00:00:00Z"
 }

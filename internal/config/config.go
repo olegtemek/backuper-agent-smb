@@ -6,16 +6,50 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
+type Duration time.Duration
+
+func (d *Duration) UnmarshalJSON(b []byte) error {
+	var v string
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	if v == "" {
+		*d = 0
+		return nil
+	}
+	parsed, err := time.ParseDuration(v)
+	if err != nil {
+		return fmt.Errorf("invalid duration format: %w", err)
+	}
+	*d = Duration(parsed)
+	return nil
+}
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
+
+func (d Duration) Duration() time.Duration {
+	return time.Duration(d)
+}
+
 type Config struct {
-	SMB            SMBConfig `json:"smb"`
-	Hostname       string    `json:"hostname"`
-	MaxVersions    int       `json:"max_versions"`
-	TimeoutMinutes int       `json:"timeout_minutes"`
-	Debug          bool      `json:"debug"`
-	Telegram       Telegram  `json:"telegram"`
-	Jobs           []Job     `json:"jobs"`
+	SMB                     SMBConfig `json:"smb"`
+	Hostname                string    `json:"hostname"`
+	MaxVersions             int       `json:"max_versions"`
+	TimeoutMinutes          int       `json:"timeout_minutes"`
+	Debug                   bool      `json:"debug"`
+	Telegram                Telegram  `json:"telegram"`
+	Jobs                    []Job     `json:"jobs"`
+	AppScheduler            bool      `json:"app_scheduler"`
+	AppSchedulerPlan        Duration  `json:"app_scheduler_plan"`
+	AppSchedulerLastTimeStr string    `json:"app_scheduler_last_time"`
+
+	AppSchedulerLastTime time.Time `json:"-"`
+	configPath           string
 }
 
 type SMBConfig struct {
@@ -37,17 +71,16 @@ type Job struct {
 }
 
 func New() (*Config, error) {
-
-	configPath := flag.String("configPath", "./config.json", "config")
+	configPathFlag := flag.String("configPath", "./config.json", "config")
 	flag.Parse()
 
-	if *configPath == "" {
+	if *configPathFlag == "" {
 		return nil, fmt.Errorf("cannot get config path, add flag \"configPath\"")
 	}
 
 	cfg := Config{}
 
-	data, err := os.ReadFile(*configPath)
+	data, err := os.ReadFile(*configPathFlag)
 	if err != nil {
 		return nil, err
 	}
@@ -57,9 +90,38 @@ func New() (*Config, error) {
 		return nil, err
 	}
 
+	cfg.configPath = *configPathFlag
+
+	if cfg.AppSchedulerLastTimeStr != "" {
+		parsed, err := time.Parse(time.RFC3339, cfg.AppSchedulerLastTimeStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid app_scheduler_last_time format: %w", err)
+		}
+		cfg.AppSchedulerLastTime = parsed
+	}
+
 	err = cfg.Validate()
 
 	return &cfg, err
+}
+
+func (c *Config) GetPath() string {
+	return c.configPath
+}
+
+func (c *Config) Save() error {
+	if !c.AppSchedulerLastTime.IsZero() {
+		c.AppSchedulerLastTimeStr = c.AppSchedulerLastTime.Format(time.RFC3339)
+	}
+
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := os.WriteFile(c.configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	return nil
 }
 
 func (c *Config) Validate() error {
@@ -119,6 +181,16 @@ func (c *Config) Validate() error {
 			if strings.TrimSpace(p) == "" {
 				errs = append(errs, fmt.Sprintf("jobs[%d].paths[%d] is blank", i, pi))
 			}
+		}
+	}
+
+	// Scheduler validation
+	if c.AppScheduler {
+		if c.AppSchedulerPlan.Duration() <= 0 {
+			errs = append(errs, "app_scheduler_plan must be positive duration when app_scheduler is enabled")
+		}
+		if c.AppSchedulerPlan.Duration() < time.Minute {
+			errs = append(errs, "app_scheduler_plan must be at least 1 minute")
 		}
 	}
 
